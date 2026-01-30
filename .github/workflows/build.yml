@@ -1,0 +1,48 @@
+name: Build Kernel for R1
+on:
+  workflow_dispatch: # 允许你手动点击按钮触发
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Checkout Source
+      uses: actions/checkout@v2
+      with:
+        ref: mkq-mr1  # ⚠️【重要】如果你是安卓10，填 mkq-mr1；安卓9填 mkp-mr1。一定要和你刚才修改代码的分支一致！
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
+
+    - name: Install KernelSU Core
+      run: |
+        # 虽然你手动改了钩子，但核心文件还需要这一步下载到 drivers/kernelsu 目录
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
+
+    - name: Download Compiler
+      run: |
+        # 下载 Google 官方 Clang 编译器 (针对 SDM845 推荐的版本)
+        git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth=1 clang-tools
+
+    - name: Build Kernel
+      run: |
+        # 设置编译器环境变量
+        export PATH=$GITHUB_WORKSPACE/clang-tools/clang-r353983c/bin:$PATH
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CLANG_TRIPLE=aarch64-linux-gnu-
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        
+        # 1. 生成配置文件 (对应你截图里的 mokee_trident_defconfig)
+        make O=out mokee_trident_defconfig
+        
+        # 2. 开始编译 (使用所有 CPU 核心)
+        make O=out -j$(nproc)
+
+    - name: Upload Image
+      uses: actions/upload-artifact@v3
+      with:
+        name: Image.gz-dtb
+        path: out/arch/arm64/boot/Image.gz-dtb
